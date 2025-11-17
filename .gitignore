@@ -1,0 +1,24 @@
+# Build output
+build/
+sdkconfig.old
+dependencies.lock
+
+# IDE files
+.vscode/
+*.code-workspace
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# ESP-IDF specific
+managed_components/
+
+# Embedded git repositories (submodules)
+mm-iot-esp32/

@@ -1,0 +1,21 @@
+# ESP32 Partition Table for 16MB Flash (25Q128)
+# Name,   Type, SubType, Offset,  Size,     Flags
+# Bootloader is automatically placed at 0x1000, size 0x7000 (28KB)
+# But we allocate 2MB for bootloader section including secure boot, etc.
+
+nvs,      data, nvs,     0x9000,  0x6000,   
+phy_init, data, phy,     0xf000,  0x1000,   
+factory,  app,  factory, 0x200000, 0xA00000, 
+config,   data, nvs,     0xC00000, 0x200000, 
+certs,    data, nvs,     0xE00000, 0x200000, 
+
+# Total usage:
+# 0x000000 - 0x008000: Reserved (32KB)
+# 0x008000 - 0x009000: Reserved (4KB)  
+# 0x009000 - 0x00F000: NVS (24KB)
+# 0x00F000 - 0x010000: PHY Init (4KB)
+# 0x010000 - 0x200000: Reserved/Unused (1984KB ≈ 2MB for bootloader section)
+# 0x200000 - 0xC00000: App (10MB)
+# 0xC00000 - 0xE00000: Config (2MB)  
+# 0xE00000 - 0x1000000: Certs (2MB)
+# Total: 16MB (0x1000000)

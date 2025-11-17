@@ -1,0 +1,14 @@
+menu "Halow RTOS Configuration"
+
+    config CONSOLE_MAX_COMMAND_LINE_LENGTH
+        int "Maximum command line length"
+        default 256
+        range 64 4096
+        help
+            This value marks the maximum length of a single command line. Once it is
+            reached, no more characters will be accepted by the console.
+            
+            Smaller values save memory, larger values allow longer commands.
+            Default: 256 bytes (sufficient for most use cases)
+
+endmenu
