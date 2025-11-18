@@ -11,4 +11,24 @@ menu "Halow RTOS Configuration"
             Smaller values save memory, larger values allow longer commands.
             Default: 256 bytes (sufficient for most use cases)
 
+    config LOGIN_DEBUG_ENABLE
+        bool "Enable login debug messages"
+        default false
+        help
+            Enable detailed debug messages for the login system.
+            This includes NVS operations, credential storage, and authentication details.
+            
+            Recommended to keep disabled for production builds to reduce log noise.
+            Enable only for debugging login issues.
+
+    config SYSTEM_LOG_ENABLE
+        bool "Enable system log messages"
+        default false
+        help
+            Enable system log messages during boot and operation.
+            This includes ESP-IDF component logs, task watchdog messages, etc.
+            
+            When disabled, provides clean console output focused on user interaction.
+            Enable for debugging system issues or development.
+
 endmenu

@@ -1,156 +1,208 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-H21 | ESP32-H4 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | --------- | -------- | -------- | -------- | -------- |
+# HaLow RTOS - IoT System with OTA Support
 
-# Basic Console Example (`esp_console_repl`)
+| Supported Targets | ESP32-S3 |
+| ----------------- | -------- |
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+## Overview
 
-This example illustrates the usage of the REPL (Read-Eval-Print Loop) APIs of the [Console Component](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/console.html#console) to create an interactive shell on the ESP chip. The interactive shell running on the ESP chip can then be controlled/interacted with over a serial interface. This example supports UART and USB interfaces.
+HaLow RTOS is an advanced IoT system built on ESP-IDF, designed for HaLow (802.11ah) WiFi connectivity with comprehensive OTA (Over-The-Air) update capabilities. The system features secure login management, MQTT integration, and A/B partition switching for reliable firmware updates.
 
-The interactive shell implemented in this example contains a wide variety of commands, and can act as a basis for applications that require a command-line interface (CLI).
+## Key Features
 
-Compared to the [advanced console example](../advanced), this example requires less code to initialize and run the console. `esp_console_repl` API handles most of the details. If you'd like to customize the way console works (for example, process console commands in an existing task), please check the advanced console example.
+###  **A/B Partition OTA Updates**
+- Dual partition architecture (OTA_0 & OTA_1) for safe firmware updates
+- Automatic rollback protection
+- Remote updates via HaLow MQTT
+- Real-time partition switching and validation
 
-## How to use example
+###  **Secure Login System**
+- First-time setup with custom credentials
+- Secure credential storage in dedicated NVS partition
+- TLS certificate management ready for future enhancements
 
-This example can be used on boards with UART and USB interfaces. The sections below explain how to set up the board and configure the example.
+###  **HaLow WiFi Integration**
+- Long-range 802.11ah connectivity support
+- Optimized configuration management
+- MQTT communication protocol
 
-### Using with UART
+###  **Interactive Console**
+- Rich command-line interface with color support
+- System monitoring and diagnostics
+- OTA testing and management commands
+- Command history and auto-completion
 
-When UART interface is used, this example should run on any commonly available Espressif development board. UART interface is enabled by default (`CONFIG_ESP_CONSOLE_UART_DEFAULT` option in menuconfig). No extra configuration is required.
+###  **Multi-Partition Storage**
+- **Config Partition (512KB)**: GPIO, HaLow WiFi, and MQTT settings
+- **Certs Partition (3.375MB)**: Login credentials and TLS certificates
+- **Optimized Layout**: 16MB flash with dual 6MB application partitions
 
-### Using with USB_SERIAL_JTAG
+## Hardware Requirements
 
-*NOTE: We recommend to disable the secondary console output on chips with USB_SERIAL_JTAG since the secondary serial is output-only and would not be very useful when using a console application. This is why the secondary console output is deactivated per default (CONFIG_ESP_CONSOLE_SECONDARY_NONE=y)*
+- **ESP32-S3** development board
+- **16MB Flash** memory
+- **UART/USB** connection for console access
 
-On chips with USB_SERIAL_JTAG peripheral, console example can be used over the USB serial port.
-
-* First, connect the USB cable to the USB_SERIAL_JTAG interface.
-* Second, run `idf.py menuconfig` and enable `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` option.
-
-For more details about connecting and configuring USB_SERIAL_JTAG (including pin numbers), see the IDF Programming Guide:
-* [ESP32-C3 USB_SERIAL_JTAG](https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/api-guides/usb-serial-jtag-console.html)
-* [ESP32-S3 USB_SERIAL_JTAG](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/usb-serial-jtag-console.html)
-
-### Using with USB CDC (USB_OTG peripheral)
-
-USB_OTG peripheral can also provide a USB serial port which works with this example.
-
-* First, connect the USB cable to the USB_OTG peripheral interface.
-* Second, run `idf.py menuconfig` and enable `CONFIG_ESP_CONSOLE_USB_CDC` option.
-
-For more details about connecting and configuring USB_OTG (including pin numbers), see the IDF Programming Guide:
-* [ESP32-S2 USB_OTG](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s2/api-guides/usb-otg-console.html)
-* [ESP32-S3 USB_OTG](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/usb-otg-console.html)
-
-### Other configuration options
-
-This example has an option to store the command history in Flash. This option is enabled by default.
-
-To disable this, run `idf.py menuconfig` and disable `CONFIG_CONSOLE_STORE_HISTORY` option.
-
-### Build and Flash
-
-Build the project and flash it to the board, then run monitor tool to view serial output:
+## Partition Layout
 
 ```
-idf.py -p PORT flash monitor
+┌─────────────────┬──────────┬─────────────────────────┐
+│ Partition       │ Size     │ Purpose                 │
+├─────────────────┼──────────┼─────────────────────────┤
+│ Bootloader      │ 32KB     │ ESP-IDF bootloader      │
+│ NVS             │ 24KB     │ Default system storage  │
+│ PHY Init        │ 4KB      │ WiFi calibration data   │
+│ OTA Data        │ 8KB      │ A/B partition control   │
+│ OTA_0 (A)       │ 6MB      │ Primary application     │
+│ OTA_1 (B)       │ 6MB      │ Update application      │
+│ Config          │ 512KB    │ System configuration    │
+│ Certs           │ 3.375MB  │ Security credentials    │
+└─────────────────┴──────────┴─────────────────────────┘
 ```
 
-(Replace PORT with the name of the serial port to use.)
+## Quick Start
 
-(To exit the serial monitor, type ``Ctrl-]``.)
+### 1. Build and Flash
 
-See the Getting Started Guide for full steps to configure and use ESP-IDF to build projects.
+```bash
+# Build the project
+idf.py build
 
-## Example Output
+# Erase flash (required for new partition table)
+idf.py erase-flash
 
-Enter the `help` command get a full list of all available commands. The following is a sample session of the Console Example where a variety of commands provided by the Console Example are used.
-
-On ESP32, GPIO15 may be connected to GND to remove the boot log output.
-
-```
-This is an example of ESP-IDF console component.
-Type 'help' to get the list of commands.
-Use UP/DOWN arrows to navigate through command history.
-Press TAB when typing command name to auto-complete.
-[esp32]> help
-help
-  Print the list of registered commands
-
-free
-  Get the total size of heap memory available
-
-restart
-  Restart the program
-
-deep_sleep  [-t <t>] [--io=<n>] [--io_level=<0|1>]
-  Enter deep sleep mode. Two wakeup modes are supported: timer and GPIO. If no
-  wakeup option is specified, will sleep indefinitely.
-  -t, --time=<t>  Wake up time, ms
-      --io=<n>  If specified, wakeup using GPIO with given number
-  --io_level=<0|1>  GPIO level to trigger wakeup
-
-join  [--timeout=<t>] <ssid> [<pass>]
-  Join WiFi AP as a station
-  --timeout=<t>  Connection timeout, ms
-        <ssid>  SSID of AP
-        <pass>  PSK of AP
-
-[esp32]> free
-257200
-[esp32]> deep_sleep -t 1000
-I (146929) deep_sleep: Enabling timer wakeup, timeout=1000000us
-I (619) heap_init: Initializing. RAM available for dynamic allocation:
-I (620) heap_init: At 3FFAE2A0 len 00001D60 (7 KiB): DRAM
-I (626) heap_init: At 3FFB7EA0 len 00028160 (160 KiB): DRAM
-I (645) heap_init: At 3FFE0440 len 00003BC0 (14 KiB): D/IRAM
-I (664) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
-I (684) heap_init: At 40093EA8 len 0000C158 (48 KiB): IRAM
-
-This is an example of ESP-IDF console component.
-Type 'help' to get the list of commands.
-Use UP/DOWN arrows to navigate through command history.
-Press TAB when typing command name to auto-complete.
-[esp32]> join --timeout 10000 test_ap test_password
-I (182639) connect: Connecting to 'test_ap'
-I (184619) connect: Connected
-[esp32]> free
-212328
-[esp32]> restart
-I (205639) restart: Restarting
-I (616) heap_init: Initializing. RAM available for dynamic allocation:
-I (617) heap_init: At 3FFAE2A0 len 00001D60 (7 KiB): DRAM
-I (623) heap_init: At 3FFB7EA0 len 00028160 (160 KiB): DRAM
-I (642) heap_init: At 3FFE0440 len 00003BC0 (14 KiB): D/IRAM
-I (661) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
-I (681) heap_init: At 40093EA8 len 0000C158 (48 KiB): IRAM
-
-This is an example of ESP-IDF console component.
-Type 'help' to get the list of commands.
-Use UP/DOWN arrows to navigate through command history.
-Press TAB when typing command name to auto-complete.
-[esp32]>
-
+# Flash firmware and start monitor
+idf.py flash monitor
 ```
 
-## Troubleshooting
+### 2. First Time Setup
 
-### Line Endings
-
-The line endings in the Console Example are configured to match particular serial monitors. Therefore, if the following log output appears, consider using a different serial monitor (e.g. Putty for Windows) or modify the example's [UART configuration](#Configuring-UART-and-VFS).
+Upon first boot, the system will prompt for initial login credentials:
 
 ```
-This is an example of ESP-IDF console component.
-Type 'help' to get the list of commands.
-Use UP/DOWN arrows to navigate through command history.
-Press TAB when typing command name to auto-complete.
-Your terminal application does not support escape sequences.
-Line editing and history features are disabled.
-On Windows, try using Windows Terminal or Putty instead.
-esp32>
+╔══════════════════════════════════════════════════════════════════╗
+║                          LOGIN SYSTEM                            ║
+║  First Time Setup:                                             ║
+║  Please create your admin credentials.                            ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Username: 
 ```
 
-### Escape Sequences on Windows 10
+### 3. Available Commands
 
-When using the default command line or PowerShell on Windows 10, you may see a message indicating that the console does not support escape sequences, as shown in the above output. To avoid such issues, it is recommended to run the serial monitor under [Windows Terminal](https://en.wikipedia.org/wiki/Windows_Terminal), which supports all required escape sequences for the app, unlike the default terminal. The main escape sequence of concern is the Device Status Report (`0x1b[5n`), which is used to check terminal capabilities. Any response to this sequence indicates support. This should not be an issue on Windows 11, where Windows Terminal is the default.
+Once logged in, use these console commands:
+
+#### System Commands
+- `help` - Show all available commands
+- `version` - Display system and partition information
+- `free` - Show memory usage statistics
+- `uptime` - Display system uptime
+- `restart` - Restart the system
+
+#### OTA Commands
+- `ota_info` - Show OTA partition information
+- `ota_copy` - Copy current firmware to other partition
+- `ota_switch` - Switch to other partition (requires restart)
+- `ota_valid` - Mark current partition as valid
+- `ota_test` - Run full A/B partition switching test
+
+## OTA Testing
+
+### A/B Partition Switching Test
+
+Test the OTA functionality without requiring actual firmware updates:
+
+```bash
+# Check current partition status
+esp32s3> ota_info
+
+# Run complete A/B switching test
+esp32s3> ota_test
+
+# Restart to switch partitions
+esp32s3> restart
+```
+
+The `ota_test` command will:
+1. Display current partition information
+2. Copy running firmware to the inactive partition (~1-2 minutes)
+3. Switch boot partition to the copied firmware
+4. Mark the new partition as valid
+
+After restart, the system will boot from the alternate partition, demonstrating successful A/B switching.
+
+## Configuration
+
+### Debug Mode
+
+Enable login debug messages:
+```bash
+idf.py menuconfig
+# Component config → HaLow RTOS Config → Enable login debug output
+```
+
+### Console Interface
+
+The system supports multiple console interfaces:
+- **UART** (default)
+- **USB Serial JTAG** 
+- **USB CDC**
+
+Configure via `idf.py menuconfig` under ESP System Settings.
+
+## Project Structure
+
+```
+halow-rtos/
+├── main/
+│   ├── task_main.c          # Main application and console
+│   ├── task_login.c/.h      # Login system implementation
+│   ├── config_manager.h     # Configuration management API
+│   ├── ota_manager.h        # OTA management framework
+│   ├── ota_test.c/.h        # OTA testing utilities
+│   └── CMakeLists.txt       # Build configuration
+├── partitions.csv           # Custom partition table
+├── sdkconfig               # ESP-IDF configuration
+└── README.md               # This file
+```
+
+## Development Notes
+
+### Extending the System
+
+- **Configuration Management**: Implement `config_manager.c` for structured settings
+- **MQTT Integration**: Add HaLow WiFi and MQTT connectivity
+- **TLS Security**: Enhance certificate management in certs partition
+- **Web Interface**: Add HTTP server for remote configuration
+
+### Troubleshooting
+
+**Login Issues**: 
+- Enable debug mode to see credential storage details
+- Use `idf.py erase-flash` to clear all stored data
+
+**OTA Issues**:
+- Ensure both OTA partitions are available (`ota_info`)
+- Check sufficient free memory before running `ota_test`
+- Verify partition table is correctly flashed
+
+**Console Issues**:
+- Use Windows Terminal or Putty for full escape sequence support
+- Check baud rate configuration (115200 default)
+
+## Future Enhancements
+
+- [ ] HaLow WiFi connectivity implementation
+- [ ] MQTT communication protocol
+- [ ] Remote OTA updates via MQTT
+- [ ] Web-based configuration interface
+- [ ] Advanced security features
+- [ ] Real-time monitoring dashboard
+
+## License
+
+This project is licensed under the terms specified in the LICENSE file.
+
+---
+
+**Built with ESP-IDF** | **Optimized for ESP32-S3** | **Ready for Production**

@@ -1,21 +1,27 @@
-# ESP32 Partition Table for 16MB Flash (25Q128)
-# Name,   Type, SubType, Offset,  Size,     Flags
-# Bootloader is automatically placed at 0x1000, size 0x7000 (28KB)
-# But we allocate 2MB for bootloader section including secure boot, etc.
+# ESP32 Optimized Partition Table for 16MB Flash - HaLow MQTT Project
+# Name,   Type, SubType,  Offset,    Size,     Flags
 
-nvs,      data, nvs,     0x9000,  0x6000,   
-phy_init, data, phy,     0xf000,  0x1000,   
-factory,  app,  factory, 0x200000, 0xA00000, 
-config,   data, nvs,     0xC00000, 0x200000, 
-certs,    data, nvs,     0xE00000, 0x200000, 
+# Basic system partitions
+nvs,      data, nvs,      0x9000,    0x6000,
+phy_init, data, phy,      0xf000,    0x1000,
+otadata,  data, ota,      0x10000,   0x2000,
 
-# Total usage:
-# 0x000000 - 0x008000: Reserved (32KB)
-# 0x008000 - 0x009000: Reserved (4KB)  
-# 0x009000 - 0x00F000: NVS (24KB)
+# Application partitions (A/B only, no factory)
+ota_0,    app,  ota_0,    0x20000,   0x600000,
+ota_1,    app,  ota_1,    0x620000,  0x600000,
+
+# Data partitions for HaLow MQTT system  
+config,   data, nvs,      0xC20000,  0x80000,
+certs,    data, nvs,      0xCA0000,  0x360000,
+
+# Memory layout:
+# 0x001000 - 0x009000: Bootloader (32KB - ESP-IDF managed)
+# 0x009000 - 0x00F000: Default NVS (24KB)
 # 0x00F000 - 0x010000: PHY Init (4KB)
-# 0x010000 - 0x200000: Reserved/Unused (1984KB ≈ 2MB for bootloader section)
-# 0x200000 - 0xC00000: App (10MB)
-# 0xC00000 - 0xE00000: Config (2MB)  
-# 0xE00000 - 0x1000000: Certs (2MB)
-# Total: 16MB (0x1000000)
+# 0x010000 - 0x012000: OTA Data (8KB)
+# 0x012000 - 0x020000: Reserved (56KB)
+# 0x020000 - 0x620000: OTA_0 App A (6MB)
+# 0x620000 - 0xC20000: OTA_1 App B (6MB)
+# 0xC20000 - 0xCA0000: Config Storage (512KB)
+# 0xCA0000 - 0x1000000: Certs Storage (3.375MB)
+# Total: 16MB
