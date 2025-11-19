@@ -73,7 +73,7 @@ static void print_welcome_banner(void)
     printf("║     " COLOR_YELLOW "• version   " COLOR_WHITE "- Display system & partition information         " COLOR_CYAN COLOR_BOLD"║\n");
     printf("║     " COLOR_YELLOW "• free      " COLOR_WHITE "- Show memory usage statistics                   " COLOR_CYAN COLOR_BOLD"║\n");
     printf("║     " COLOR_YELLOW "• uptime    " COLOR_WHITE "- Display system uptime                          " COLOR_CYAN COLOR_BOLD"║\n");
-    printf("║     " COLOR_YELLOW "• restart   " COLOR_WHITE "- Restart the system                             " COLOR_CYAN COLOR_BOLD"║\n");
+    printf("║     " COLOR_YELLOW "• reboot    " COLOR_WHITE "- Reboot the system                              " COLOR_CYAN COLOR_BOLD"║\n");
     printf("║                                                                  ║\n");
     printf("║  " COLOR_MAGENTA "  Tip: Type 'help' for complete command list                    " COLOR_CYAN COLOR_BOLD"║\n");
     printf("╚══════════════════════════════════════════════════════════════════╝" COLOR_RESET "\n");
@@ -181,13 +181,13 @@ static int uptime_cmd(int argc, char **argv)
 
 static void register_basic_commands(void)
 {
-    const esp_console_cmd_t restart_cmd_def = {
-        .command = "restart",
-        .help = "Restart the system",
+    const esp_console_cmd_t reboot_cmd_def = {
+        .command = "reboot",
+        .help = "Reboot the system",
         .hint = NULL,
         .func = &restart_cmd,
     };
-    ESP_ERROR_CHECK(esp_console_cmd_register(&restart_cmd_def));
+    ESP_ERROR_CHECK(esp_console_cmd_register(&reboot_cmd_def));
 
     const esp_console_cmd_t free_cmd_def = {
         .command = "free",

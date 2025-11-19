@@ -229,7 +229,7 @@ esp_err_t ota_test_full_ab_cycle(void)
     ota_test_mark_partition_valid();
     
     printf(COLOR_GREEN COLOR_BOLD "\n A/B switching test complete!\n" COLOR_RESET);
-    printf(COLOR_YELLOW " Run 'restart' command to boot from new partition\n" COLOR_RESET);
+    printf(COLOR_YELLOW " Run 'reboot' command to boot from new partition\n" COLOR_RESET);
     
     return ESP_OK;
 }
