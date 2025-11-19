@@ -249,6 +249,22 @@ esp_err_t task_gpio_get_pin_state(uint8_t pin, task_gpio_pin_state_t* state)
 }
 
 /**
+ * @brief Check if GPIO pin is reserved by system (Flash, etc.)
+ */
+static bool gpio_is_reserved(uint8_t pin)
+{
+    // Flash pins are reserved
+    if (pin >= 6 && pin <= 11) {
+        return true;
+    }
+    // Non-existent pins
+    if (pin == 20 || pin == 24 || (pin >= 28 && pin <= 31)) {
+        return true;
+    }
+    return false;
+}
+
+/**
  * @brief Display status of all GPIOs
  */
 void task_gpio_display_status(void)
@@ -258,7 +274,8 @@ void task_gpio_display_status(void)
     printf("---  ---------  ---------  -----  -----\n");
     
     for (uint8_t pin = GPIO_MIN_PIN; pin <= GPIO_MAX_PIN; pin++) {
-        if (!task_gpio_is_valid_pin(pin)) {
+        // Skip non-existent pins
+        if (pin == 20 || pin == 24 || (pin >= 28 && pin <= 31)) {
             continue;
         }
         
@@ -266,28 +283,53 @@ void task_gpio_display_status(void)
         int current_level = gpio_get_level(pin);
         gpio_states[pin].level = current_level;
         
-        const char* dir_str = (gpio_states[pin].direction == TASK_GPIO_DIR_OUTPUT) ? 
-                              COLOR_GREEN "OUTPUT" COLOR_RESET : COLOR_BLUE "INPUT " COLOR_RESET;
-        
+        const char* dir_str;
         const char* pull_str;
-        if (gpio_states[pin].pull_mode == TASK_GPIO_PULL_UP) {
-            pull_str = "PULLUP  ";
-        } else if (gpio_states[pin].pull_mode == TASK_GPIO_PULL_DOWN) {
-            pull_str = "PULLDOWN";
+        const char* level_str;
+        char label_buffer[64] = {0};
+        
+        // Check if pin is reserved (Flash SPI)
+        bool is_reserved = gpio_is_reserved(pin);
+        
+        if (is_reserved) {
+            // Reserved pins - show in different color
+            dir_str = COLOR_RED "SYSTEM" COLOR_RESET;
+            pull_str = "--------";
+            level_str = current_level ? COLOR_GREEN "HIGH" COLOR_RESET : COLOR_WHITE "LOW " COLOR_RESET;
+            
+            // Add RESERVED marker to label
+            if (gpio_states[pin].label[0] != '\0') {
+                snprintf(label_buffer, sizeof(label_buffer), "%s " COLOR_RED "(RESERVED)" COLOR_RESET, 
+                         gpio_states[pin].label);
+            } else {
+                snprintf(label_buffer, sizeof(label_buffer), COLOR_RED "(RESERVED)" COLOR_RESET);
+            }
         } else {
-            pull_str = "NONE    ";
+            // Normal pins
+            dir_str = (gpio_states[pin].direction == TASK_GPIO_DIR_OUTPUT) ? 
+                      COLOR_GREEN "OUTPUT" COLOR_RESET : COLOR_BLUE "INPUT " COLOR_RESET;
+            
+            if (gpio_states[pin].pull_mode == TASK_GPIO_PULL_UP) {
+                pull_str = "PULLUP  ";
+            } else if (gpio_states[pin].pull_mode == TASK_GPIO_PULL_DOWN) {
+                pull_str = "PULLDOWN";
+            } else {
+                pull_str = "NONE    ";
+            }
+            
+            level_str = current_level ? 
+                        COLOR_GREEN "HIGH" COLOR_RESET : COLOR_WHITE "LOW " COLOR_RESET;
+            
+            // Display label if set, otherwise show notes
+            if (gpio_states[pin].label[0] != '\0') {
+                strncpy(label_buffer, gpio_states[pin].label, sizeof(label_buffer) - 1);
+            } else if (pin >= 34 && pin <= 39) {
+                strncpy(label_buffer, "(Input only)", sizeof(label_buffer) - 1);
+            }
         }
         
-        const char* level_str = current_level ? 
-                                COLOR_GREEN "HIGH" COLOR_RESET : COLOR_WHITE "LOW " COLOR_RESET;
-        
-        // Display label if set, otherwise show notes
-        const char* label_or_notes = gpio_states[pin].label[0] != '\0' ? 
-                                     gpio_states[pin].label : 
-                                     (pin >= 34 && pin <= 39) ? "(Input only)" : "";
-        
         printf("%2d     %s   %s   %s   %s\n", 
-               pin, dir_str, pull_str, level_str, label_or_notes);
+               pin, dir_str, pull_str, level_str, label_buffer);
     }
     
     printf("\n");
