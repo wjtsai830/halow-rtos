@@ -17,6 +17,7 @@
 #include "esp_ota_ops.h"
 #include "task_login.h"
 #include "ota_test.h"
+#include "task_gpio.h"
 
 /*
  * We warn if a secondary serial console is enabled. A secondary serial console is always output-only and
@@ -540,6 +541,9 @@ void app_main(void)
     initialize_nvs();
     check_partition_availability();
     login_init();
+    
+    // Initialize GPIO system
+    task_gpio_init();
 
 #ifdef CONFIG_SYSTEM_LOG_ENABLE
     ESP_LOGI(TAG, "Starting Halow RTOS System");
@@ -569,6 +573,7 @@ void app_main(void)
     esp_console_register_help_command();
     register_basic_commands();
     register_ota_commands();
+    register_gpio_commands();
 
 #if defined(CONFIG_ESP_CONSOLE_UART_DEFAULT) || defined(CONFIG_ESP_CONSOLE_UART_CUSTOM)
     esp_console_dev_uart_config_t hw_config = ESP_CONSOLE_DEV_UART_CONFIG_DEFAULT();
