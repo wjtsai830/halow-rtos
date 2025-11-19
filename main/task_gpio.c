@@ -96,6 +96,24 @@ esp_err_t task_gpio_init(void)
         gpio_states[pin].label[0] = '\0';  // Empty label
     }
     
+    // Set default labels for system-used pins (ESP32 specific)
+    // UART0 (Console/Programming)
+    strncpy(gpio_states[1].label, "UART0_TX", GPIO_LABEL_MAX_LEN);
+    strncpy(gpio_states[3].label, "UART0_RX", GPIO_LABEL_MAX_LEN);
+    
+    // SPI Flash (GPIO 6-11 are already marked as invalid)
+    strncpy(gpio_states[6].label, "SPI_FLASH_CLK", GPIO_LABEL_MAX_LEN);
+    strncpy(gpio_states[7].label, "SPI_FLASH_D0", GPIO_LABEL_MAX_LEN);
+    strncpy(gpio_states[8].label, "SPI_FLASH_D1", GPIO_LABEL_MAX_LEN);
+    strncpy(gpio_states[9].label, "SPI_FLASH_D2", GPIO_LABEL_MAX_LEN);
+    strncpy(gpio_states[10].label, "SPI_FLASH_D3", GPIO_LABEL_MAX_LEN);
+    strncpy(gpio_states[11].label, "SPI_FLASH_CMD", GPIO_LABEL_MAX_LEN);
+    
+    // Strapping pins (commonly used for boot mode)
+    strncpy(gpio_states[0].label, "BOOT", GPIO_LABEL_MAX_LEN);
+    strncpy(gpio_states[2].label, "LED_BUILTIN", GPIO_LABEL_MAX_LEN);
+    strncpy(gpio_states[15].label, "STRAPPING", GPIO_LABEL_MAX_LEN);
+    
     ESP_LOGI(TAG, "GPIO system initialized (on-demand configuration)");
     return ESP_OK;
 }
