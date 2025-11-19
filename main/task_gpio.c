@@ -10,8 +10,13 @@
 #include "esp_log.h"
 #include "esp_console.h"
 #include "driver/gpio.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 static const char* TAG = "task_gpio";
+
+// NVS namespace for GPIO configuration
+#define GPIO_NVS_NAMESPACE "gpio_config"
 
 // ANSI Color Codes
 #define COLOR_RESET     "\033[0m"
@@ -79,6 +84,146 @@ static bool gpio_supports_pull(uint8_t pin)
 }
 
 /**
+ * @brief Save GPIO configuration for a specific pin to NVS
+ */
+static esp_err_t gpio_save_pin_config(uint8_t pin)
+{
+    if (!task_gpio_is_valid_pin(pin)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+    
+    // Open NVS in config partition
+    err = nvs_open_from_partition("config", GPIO_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to open NVS for GPIO config: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    // Create key names for this pin
+    char dir_key[16], pull_key[16], label_key[16];
+    snprintf(dir_key, sizeof(dir_key), "dir_%d", pin);
+    snprintf(pull_key, sizeof(pull_key), "pull_%d", pin);
+    snprintf(label_key, sizeof(label_key), "label_%d", pin);
+    
+    // Save direction
+    nvs_set_u8(nvs_handle, dir_key, (uint8_t)gpio_states[pin].direction);
+    
+    // Save pull mode
+    nvs_set_u8(nvs_handle, pull_key, (uint8_t)gpio_states[pin].pull_mode);
+    
+    // Save label if not empty
+    if (gpio_states[pin].label[0] != '\0') {
+        nvs_set_str(nvs_handle, label_key, gpio_states[pin].label);
+    }
+    
+    // Commit changes
+    err = nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "GPIO %d config saved to NVS", pin);
+    }
+    
+    return err;
+}
+
+/**
+ * @brief Load GPIO configuration for a specific pin from NVS
+ */
+static esp_err_t gpio_load_pin_config(uint8_t pin)
+{
+    if (!task_gpio_is_valid_pin(pin)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+    
+    // Open NVS in config partition
+    err = nvs_open_from_partition("config", GPIO_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        // No saved config, not an error
+        return ESP_OK;
+    }
+    
+    // Create key names for this pin
+    char dir_key[16], pull_key[16], label_key[16];
+    snprintf(dir_key, sizeof(dir_key), "dir_%d", pin);
+    snprintf(pull_key, sizeof(pull_key), "pull_%d", pin);
+    snprintf(label_key, sizeof(label_key), "label_%d", pin);
+    
+    // Load direction
+    uint8_t direction;
+    if (nvs_get_u8(nvs_handle, dir_key, &direction) == ESP_OK) {
+        gpio_states[pin].direction = (task_gpio_direction_t)direction;
+        
+        // Apply the direction to hardware
+        gpio_mode_t mode = (direction == TASK_GPIO_DIR_OUTPUT) ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT;
+        gpio_set_direction(pin, mode);
+    }
+    
+    // Load pull mode
+    uint8_t pull_mode;
+    if (nvs_get_u8(nvs_handle, pull_key, &pull_mode) == ESP_OK) {
+        gpio_states[pin].pull_mode = (task_gpio_pull_mode_t)pull_mode;
+        
+        // Apply pull mode to hardware if it's input
+        if (gpio_states[pin].direction == TASK_GPIO_DIR_INPUT && gpio_supports_pull(pin)) {
+            switch (pull_mode) {
+                case TASK_GPIO_PULL_UP:
+                    gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY);
+                    break;
+                case TASK_GPIO_PULL_DOWN:
+                    gpio_set_pull_mode(pin, GPIO_PULLDOWN_ONLY);
+                    break;
+                case TASK_GPIO_PULL_NONE:
+                    gpio_set_pull_mode(pin, GPIO_FLOATING);
+                    break;
+            }
+        }
+    }
+    
+    // Load label
+    size_t label_len = GPIO_LABEL_MAX_LEN + 1;
+    char temp_label[GPIO_LABEL_MAX_LEN + 1];
+    if (nvs_get_str(nvs_handle, label_key, temp_label, &label_len) == ESP_OK) {
+        strncpy(gpio_states[pin].label, temp_label, GPIO_LABEL_MAX_LEN);
+        gpio_states[pin].label[GPIO_LABEL_MAX_LEN] = '\0';
+    }
+    
+    nvs_close(nvs_handle);
+    return ESP_OK;
+}
+
+/**
+ * @brief Load all GPIO configurations from NVS
+ */
+static void gpio_load_all_configs(void)
+{
+    ESP_LOGI(TAG, "Loading GPIO configurations from NVS...");
+    
+    int loaded_count = 0;
+    for (uint8_t pin = GPIO_MIN_PIN; pin <= GPIO_MAX_PIN; pin++) {
+        if (task_gpio_is_valid_pin(pin)) {
+            if (gpio_load_pin_config(pin) == ESP_OK) {
+                // Check if this pin has custom config (non-default label or direction)
+                if (gpio_states[pin].label[0] != '\0' || 
+                    gpio_states[pin].direction != TASK_GPIO_DIR_INPUT) {
+                    loaded_count++;
+                }
+            }
+        }
+    }
+    
+    if (loaded_count > 0) {
+        ESP_LOGI(TAG, "Loaded %d GPIO configurations from NVS", loaded_count);
+    }
+}
+
+/**
  * @brief Initialize GPIO system
  * Only initializes the state tracking, does not configure hardware
  */
@@ -113,6 +258,9 @@ esp_err_t task_gpio_init(void)
     strncpy(gpio_states[0].label, "BOOT", GPIO_LABEL_MAX_LEN);
     strncpy(gpio_states[2].label, "LED_BUILTIN", GPIO_LABEL_MAX_LEN);
     strncpy(gpio_states[15].label, "STRAPPING", GPIO_LABEL_MAX_LEN);
+    
+    // Load saved configurations from NVS
+    gpio_load_all_configs();
     
     ESP_LOGI(TAG, "GPIO system initialized (on-demand configuration)");
     return ESP_OK;
@@ -382,6 +530,9 @@ static int gpio_cmd(int argc, char **argv)
         strncpy(gpio_states[pin].label, argv[3], GPIO_LABEL_MAX_LEN);
         gpio_states[pin].label[GPIO_LABEL_MAX_LEN] = '\0';  // Ensure null termination
         
+        // Save configuration to NVS
+        gpio_save_pin_config(pin);
+        
         printf(COLOR_GREEN "GPIO %d label set to '%s'\n" COLOR_RESET, pin, gpio_states[pin].label);
         return 0;
     }
@@ -415,6 +566,9 @@ static int gpio_cmd(int argc, char **argv)
                    esp_err_to_name(err));
             return 1;
         }
+        
+        // Save configuration to NVS
+        gpio_save_pin_config(pin);
         
         printf(COLOR_GREEN "GPIO %d set to %s\n" COLOR_RESET, pin, argv[3]);
         return 0;
@@ -466,6 +620,10 @@ static int gpio_cmd(int argc, char **argv)
                        esp_err_to_name(err));
                 return 1;
             }
+            
+            // Save configuration to NVS
+            gpio_save_pin_config(pin);
+            
             printf(COLOR_GREEN "GPIO %d pull mode set to %s\n" COLOR_RESET, pin, 
                    is_high ? "PULLUP" : "PULLDOWN");
         }
