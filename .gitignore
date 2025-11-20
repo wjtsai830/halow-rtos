@@ -22,7 +22,7 @@ Thumbs.db
 managed_components/
 
 # Embedded git repositories (submodules)
-mm-iot-esp32/
+# mm-iot-esp32/
 =======
 # Prerequisites
 *.d
