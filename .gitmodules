@@ -1,3 +1,4 @@
 [submodule "mm-iot-esp32"]
 	path = mm-iot-esp32
 	url = https://github.com/wjtsai830/mm-iot-esp32.git
+	branch = v5.5.1

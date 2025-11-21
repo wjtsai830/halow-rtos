@@ -18,6 +18,7 @@
 #include "mmhal.h"
 #include "mmosal.h"
 #include "mmwlan.h"
+#include "mmipal.h"
 #include "mm_app_regdb.h"
 
 static const char *TAG = "task_halow";
@@ -111,6 +112,20 @@ static void halow_sta_status_handler(enum mmwlan_sta_state sta_state)
     };
     printf("HaLow STA state: %s (%u)\n> ", sta_state_desc[sta_state], sta_state);
     fflush(stdout);
+
+    // Set connection status based on STA state
+    if (sta_state == MMWLAN_STA_CONNECTED) {
+        if (halow_event_group) {
+            xEventGroupSetBits(halow_event_group, HALOW_CONNECTED_BIT);
+        }
+    } else if (sta_state == MMWLAN_STA_DISABLED || sta_state == MMWLAN_STA_CONNECTING) {
+        // Clear connection status for disconnected/connecting states
+        if (halow_event_group) {
+            xEventGroupClearBits(halow_event_group, HALOW_CONNECTED_BIT);
+        }
+        // Clear SSID if connection failed
+        halow_connected_ssid[0] = '\0';
+    }
 }
 
 /**
@@ -267,8 +282,11 @@ esp_err_t task_halow_init(void)
     mmwlan_init();
     ESP_LOGI(TAG, "mmwlan_init() completed");
 
+    // NOTE: Network stack (MMIPAL) will be initialized in halow_start()
+    // after channel list is set, to avoid "Channel list not set" error
+
     halow_initialized = true;
-    ESP_LOGI(TAG, "HaLow initialized successfully");
+    ESP_LOGI(TAG, "HaLow initialized successfully (network stack deferred to start)");
     return ESP_OK;
 }
 
@@ -327,6 +345,18 @@ int halow_start(void)
                 ESP_LOGE(TAG, "Failed to boot HaLow interface");
                 return -1;
             }
+
+            // Initialize the network stack (MMIPAL) now that channel list is set
+            ESP_LOGI(TAG, "Initializing network stack (MMIPAL) after boot...");
+            struct mmipal_init_args mmipal_args = MMIPAL_INIT_ARGS_DEFAULT;
+            enum mmipal_status mmipal_status = mmipal_init(&mmipal_args);
+
+            if (mmipal_status != MMIPAL_SUCCESS) {
+                ESP_LOGE(TAG, "Failed to initialize network stack: %d", mmipal_status);
+                return -1;
+            }
+            ESP_LOGI(TAG, "Network stack (MMIPAL) initialized successfully");
+
             halow_booted = true;
         } else {
             // Interface already booted, just re-register callbacks
@@ -574,6 +604,7 @@ static int halow_cmd(int argc, char **argv)
         printf("  halow connect <ssid> [password] - Connect to network\n");
         printf("  halow version         - Display version information\n");
         printf("  halow status          - Show current status\n");
+        printf("  halow refresh         - Refresh network status (polls for IP updates)\n");
         return 0;
     }
 
@@ -630,12 +661,32 @@ static int halow_cmd(int argc, char **argv)
                 printf("SSID:        " COLOR_YELLOW "Unknown" COLOR_RESET "\n");
             }
 
-            // IP address placeholder for future network layer integration
-            printf("IP Address:  " COLOR_YELLOW "Not implemented (requires network layer)" COLOR_RESET "\n");
+            // Get and display IP address from network stack
+            struct mmipal_ip_config ip_config;
+            enum mmipal_status ip_status = mmipal_get_ip_config(&ip_config);
+
+            if (ip_status == MMIPAL_SUCCESS) {
+                // Check if we have a valid IP (not 0.0.0.0 which indicates DHCP in progress)
+                if (strcmp(ip_config.ip_addr, "0.0.0.0") == 0 || strcmp(ip_config.ip_addr, "") == 0) {
+                    printf("IP Address:  " COLOR_YELLOW "DHCP in progress... (wait a few seconds)" COLOR_RESET "\n");
+                    printf("Netmask:     Waiting for DHCP\n");
+                    printf("Gateway:     Waiting for DHCP\n");
+                } else {
+                    printf("IP Address:  %s\n", ip_config.ip_addr);
+                    printf("Netmask:     %s\n", ip_config.netmask);
+                    printf("Gateway:     %s\n", ip_config.gateway_addr);
+                }
+            } else {
+                printf("IP Address:  " COLOR_RED "Failed to get IP config (%d)" COLOR_RESET "\n", ip_status);
+                printf("Netmask:     N/A\n");
+                printf("Gateway:     N/A\n");
+            }
         } else {
             printf("Connected:   " COLOR_RED "No" COLOR_RESET "\n");
             printf("SSID:        N/A\n");
             printf("IP Address:  N/A\n");
+            printf("Netmask:     N/A\n");
+            printf("Gateway:     N/A\n");
         }
     }
     else {
