@@ -18,7 +18,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../mm-iot-esp32/framework/morselib" AND
     endif()
     
     # Register component with all sources
-    idf_component_register(SRCS ${HALOW_SRCS} "task_gpio.c" "task_main.c" "task_login.c" "ota_test.c" "task_halow.c" "mm_app_regdb.c"
+    idf_component_register(SRCS ${HALOW_SRCS} "task_gpio.c" "task_main.c" "task_login.c" "ota_test.c" "task_halow.c" "task_tool.c" "mm_app_regdb.c"
                            PRIV_REQUIRES console nvs_flash app_update driver morselib mm_shims mmipal esp_netif
                            INCLUDE_DIRS ".")
     

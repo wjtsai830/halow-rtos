@@ -20,6 +20,7 @@
 #include "task_gpio.h"
 #ifndef HALOW_DISABLED
 #include "task_halow.h"
+#include "task_tool.h"
 #endif
 
 /*
@@ -551,6 +552,9 @@ void app_main(void)
 #ifndef HALOW_DISABLED
     // Initialize HaLow system
     task_halow_init();
+
+    // Initialize network tools (ping, traceroute, etc.)
+    task_tool_init();
 #endif
 
 #ifdef CONFIG_SYSTEM_LOG_ENABLE
@@ -584,6 +588,7 @@ void app_main(void)
     register_gpio_commands();
 #ifndef HALOW_DISABLED
     register_halow_commands();
+    register_tool_commands();
 #endif
 
 #if defined(CONFIG_ESP_CONSOLE_UART_DEFAULT) || defined(CONFIG_ESP_CONSOLE_UART_CUSTOM)
