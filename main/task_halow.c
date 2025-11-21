@@ -12,7 +12,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "nvs_flash.h"
-#include <string.h>
 
 // Morse Micro SDK includes
 #include "mmhal.h"
@@ -55,6 +54,18 @@ static const char *TAG = "task_halow";
 #define MAX_PASSWORD_LEN    64
 #define MAX_SCAN_RESULTS    20
 
+// Network configuration for auto-connect
+typedef struct {
+    char ssid[MAX_SSID_LEN];
+    char password[MAX_PASSWORD_LEN];
+    bool valid;  // Flag indicating if config is valid
+} network_config_t;
+
+#define AUTO_CONNECT_MAX_ATTEMPTS 3
+#define AUTO_CONNECT_RETRY_DELAY_MS 2000
+
+static char halow_last_password[MAX_PASSWORD_LEN];
+
 static EventGroupHandle_t halow_event_group;
 static bool halow_initialized = false;
 static bool halow_started = false;
@@ -63,6 +74,12 @@ static struct mmosal_semb *halow_scan_semaphore = NULL;
 static struct mmosal_semb *halow_link_semaphore = NULL;
 static uint16_t scan_count = 0;
 static char halow_connected_ssid[MMWLAN_SSID_MAXLEN + 1] = "";
+static char halow_save_pending_ssid[MMWLAN_SSID_MAXLEN + 1] = "";      // SSID to save when connection succeeds
+static char halow_save_pending_password[MAX_PASSWORD_LEN] = "";         // Password to save when connection succeeds
+
+// Function forward declarations
+static int halow_auto_connect(void);
+static bool halow_should_save_network_config(const char* ssid, const char* password);
 
 /**
  * Link state callback for HaLow connection status
@@ -118,6 +135,44 @@ static void halow_sta_status_handler(enum mmwlan_sta_state sta_state)
         if (halow_event_group) {
             xEventGroupSetBits(halow_event_group, HALOW_CONNECTED_BIT);
         }
+
+        // Save the network configuration when connection succeeds (use dedicated variables)
+        if (halow_save_pending_ssid[0] != '\0') {
+            ESP_LOGI(TAG, "=== HaLow Connection Success! ===");
+            ESP_LOGI(TAG, "Connected to network: '%s'", halow_save_pending_ssid);
+            ESP_LOGI(TAG, "Checking if config should be saved...");
+
+            // Check if we need to save (compare with existing config)
+            if (halow_should_save_network_config(halow_save_pending_ssid, halow_save_pending_password)) {
+                ESP_LOGI(TAG, "Network config needs to be saved (new/different config)");
+                esp_err_t save_err = halow_save_network_config(halow_save_pending_ssid, halow_save_pending_password);
+                if (save_err == ESP_OK) {
+                    ESP_LOGI(TAG, "Network config successfully saved: SSID='%s'", halow_save_pending_ssid);
+                    ESP_LOGI(TAG, "Credentials saved to flash (certs partition)");
+                    ESP_LOGI(TAG, "Auto-connect will be available on reboot");
+                } else {
+                    ESP_LOGE(TAG, "Failed to save network config: %s", esp_err_to_name(save_err));
+                }
+            } else {
+                ESP_LOGI(TAG, "Network config already exists, skipping flash write to preserve life");
+                ESP_LOGI(TAG, "Configuration is identical - no changes needed");
+            }
+
+            // Update connected SSID for status display after successful save
+            strncpy(halow_connected_ssid, halow_save_pending_ssid, sizeof(halow_connected_ssid) - 1);
+            halow_connected_ssid[sizeof(halow_connected_ssid) - 1] = '\0';
+
+            // Clear the pending save config after processing
+            halow_save_pending_ssid[0] = '\0';
+            halow_save_pending_password[0] = '\0';
+
+            ESP_LOGI(TAG, "=== HaLow Setup Complete! ===");
+        } else {
+            ESP_LOGI(TAG, "Connected but no pending config to save");
+            // Still update the connected SSID for status display
+            // This might happen with auto-connect
+            ESP_LOGI(TAG, "Checking if this was an auto-connect...");
+        }
     } else if (sta_state == MMWLAN_STA_DISABLED || sta_state == MMWLAN_STA_CONNECTING) {
         // Clear connection status for disconnected/connecting states
         if (halow_event_group) {
@@ -125,6 +180,9 @@ static void halow_sta_status_handler(enum mmwlan_sta_state sta_state)
         }
         // Clear SSID if connection failed
         halow_connected_ssid[0] = '\0';
+
+        // If connection failed, clear the saved password
+        halow_last_password[0] = '\0';
     }
 }
 
@@ -290,6 +348,8 @@ esp_err_t task_halow_init(void)
     return ESP_OK;
 }
 
+
+
 /**
  * @brief Start HaLow networking
  * @return 0 on success, error code otherwise
@@ -383,6 +443,10 @@ int halow_start(void)
     fflush(stdout);
 
     ESP_LOGI(TAG, "HaLow started successfully");
+
+    // Attempt auto-connect if we have saved network config
+    halow_auto_connect();
+
     return 0;
 }
 
@@ -418,6 +482,249 @@ int halow_stop(void)
 }
 
 /**
+ * @brief Save network configuration to certs partition
+ * @param ssid Network SSID
+ * @param password Network password (can be NULL for open networks)
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t halow_save_network_config(const char* ssid, const char* password)
+{
+    if (!ssid || strlen(ssid) == 0) {
+        ESP_LOGE(TAG, "Cannot save network config: invalid SSID");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t err;
+
+    // Open certs partition with namespace "halow_auto"
+    err = nvs_open_from_partition("certs", "halow_auto", NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open certs partition: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Save SSID
+    err = nvs_set_str(handle, "ssid", ssid);
+    if (err != ESP_OK) {
+        nvs_close(handle);
+        ESP_LOGE(TAG, "Failed to save SSID: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Save password (can be empty for open networks)
+    const char* password_to_save = password ? password : "";
+    err = nvs_set_str(handle, "password", password_to_save);
+    if (err != ESP_OK) {
+        nvs_close(handle);
+        ESP_LOGE(TAG, "Failed to save password: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Mark config as valid
+    err = nvs_set_u8(handle, "valid", 1);
+    if (err != ESP_OK) {
+        nvs_close(handle);
+        ESP_LOGE(TAG, "Failed to set valid flag: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Commit changes
+    err = nvs_commit(handle);
+    if (err != ESP_OK) {
+        nvs_close(handle);
+        ESP_LOGE(TAG, "Failed to commit changes: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    nvs_close(handle);
+
+    ESP_LOGI(TAG, "Network config saved to certs partition: SSID=%s", ssid);
+    return ESP_OK;
+}
+
+/**
+ * @brief Load network configuration from certs partition
+ * @param ssid Buffer to store SSID (must be at least 32 bytes)
+ * @param password Buffer to store password (must be at least 64 bytes)
+ * @return true if config was loaded successfully, false otherwise
+ */
+bool halow_load_network_config(char* ssid, char* password)
+{
+    if (!ssid || !password) {
+        ESP_LOGE(TAG, "Invalid buffers provided for loading network config");
+        return false;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t err;
+
+    // Open certs partition with namespace "halow_auto"
+    err = nvs_open_from_partition("certs", "halow_auto", NVS_READONLY, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "No saved network config found (couldn't open partition): %s", esp_err_to_name(err));
+        return false;
+    }
+
+    // Check if config is marked as valid
+    uint8_t valid = 0;
+    err = nvs_get_u8(handle, "valid", &valid);
+    if (err != ESP_OK || valid != 1) {
+        nvs_close(handle);
+        ESP_LOGD(TAG, "Network config not valid or missing");
+        return false;
+    }
+
+    // Load SSID
+    size_t ssid_len = MAX_SSID_LEN;
+    err = nvs_get_str(handle, "ssid", ssid, &ssid_len);
+    if (err != ESP_OK) {
+        nvs_close(handle);
+        ESP_LOGE(TAG, "Failed to load SSID: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    // Load password
+    size_t password_len = MAX_PASSWORD_LEN;
+    err = nvs_get_str(handle, "password", password, &password_len);
+    if (err != ESP_OK) {
+        nvs_close(handle);
+        ESP_LOGE(TAG, "Failed to load password: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    nvs_close(handle);
+
+    ESP_LOGI(TAG, "Network config loaded from certs partition: SSID=%s", ssid);
+    return true;
+}
+
+/**
+ * @brief Check if we need to save network configuration (compare with existing saved config)
+ * @param ssid Network SSID to compare
+ * @param password Network password to compare (can be NULL for open networks)
+ * @return true if config needs to be saved (different from saved config), false otherwise
+ */
+bool halow_should_save_network_config(const char* ssid, const char* password)
+{
+    char saved_ssid[MAX_SSID_LEN] = {0};
+    char saved_password[MAX_PASSWORD_LEN] = {0};
+
+    // Try to load existing config
+    if (!halow_load_network_config(saved_ssid, saved_password)) {
+        // No existing config, so we should save
+        return true;
+    }
+
+    // Compare SSID
+    if (strcmp(saved_ssid, ssid) != 0) {
+        // Different SSID, need to save
+        return true;
+    }
+
+    // Compare password (handle NULL cases)
+    const char* new_password = password ? password : "";
+    if (strcmp(saved_password, new_password) != 0) {
+        // Different password, need to save
+        return true;
+    }
+
+    // Config is identical, no need to save
+    return false;
+}
+
+/**
+ * @brief Clear saved network configuration
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t halow_clear_network_config(void)
+{
+    nvs_handle_t handle;
+    esp_err_t err;
+
+    // Open certs partition with namespace "halow_auto"
+    err = nvs_open_from_partition("certs", "halow_auto", NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open certs partition for clearing: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Clear all keys in the namespace
+    err = nvs_erase_all(handle);
+    if (err != ESP_OK) {
+        nvs_close(handle);
+        ESP_LOGE(TAG, "Failed to erase network config: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Commit changes
+    err = nvs_commit(handle);
+    nvs_close(handle);
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to commit config erase: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Network config cleared from certs partition");
+    return ESP_OK;
+}
+
+/**
+ * @brief Attempt automatic connection to saved network
+ * @return 0 on success, error code otherwise
+ */
+int halow_auto_connect(void)
+{
+    char ssid[MAX_SSID_LEN];
+    char password[MAX_PASSWORD_LEN];
+
+    // Try to load saved network config
+    if (!halow_load_network_config(ssid, password)) {
+        ESP_LOGI(TAG, "No saved network config found, skipping auto-connect");
+        return -1;
+    }
+
+    printf(COLOR_CYAN "Found saved network config, attempting auto-connect to '%s'...\n" COLOR_RESET, ssid);
+
+    // Try to connect up to 3 times
+    for (int attempt = 1; attempt <= AUTO_CONNECT_MAX_ATTEMPTS; attempt++) {
+        printf("Auto-connect attempt %d/%d...\n> ", attempt, AUTO_CONNECT_MAX_ATTEMPTS);
+        fflush(stdout);
+
+        // Restore password from NVS storage
+        const char* connect_password = (strlen(password) > 0) ? password : NULL;
+
+        // Attempt connection
+        if (halow_connect(ssid, connect_password) == 0) {
+            // Wait for connection result (5 seconds)
+            EventBits_t bits = xEventGroupWaitBits(halow_event_group,
+                                                  HALOW_CONNECTED_BIT,
+                                                  pdFALSE,
+                                                  pdFALSE,
+                                                  pdMS_TO_TICKS(5000));
+
+            if (bits & HALOW_CONNECTED_BIT) {
+                printf(COLOR_GREEN "Auto-connect successful: %s\n" COLOR_RESET, ssid);
+                return 0;
+            } else {
+                printf(COLOR_YELLOW "Auto-connect attempt %d failed, still trying...\n" COLOR_RESET, attempt);
+            }
+        } else {
+            printf(COLOR_RED "Auto-connect attempt %d failed to initiate\n" COLOR_RESET, attempt);
+        }
+
+        // Wait between attempts (except for the last one)
+        if (attempt < AUTO_CONNECT_MAX_ATTEMPTS) {
+            vTaskDelay(pdMS_TO_TICKS(AUTO_CONNECT_RETRY_DELAY_MS));
+        }
+    }
+
+    printf(COLOR_RED "Auto-connect failed after %d attempts. Manual connect required.\n" COLOR_RESET, AUTO_CONNECT_MAX_ATTEMPTS);
+    return -1;
+}
+
+/**
  * @brief Connect to a HaLow network
  * @param ssid Network SSID to connect to
  * @param password Password (optional for open networks)
@@ -433,6 +740,14 @@ int halow_connect(const char* ssid, const char* password)
     if (!ssid || strlen(ssid) == 0) {
         ESP_LOGE(TAG, "Invalid SSID");
         return -1;
+    }
+
+    // Store the password for auto-save on successful connection
+    if (password && strlen(password) > 0) {
+        strncpy(halow_last_password, password, sizeof(halow_last_password) - 1);
+        halow_last_password[sizeof(halow_last_password) - 1] = '\0';
+    } else {
+        halow_last_password[0] = '\0';  // Empty password for open networks
     }
 
     enum mmwlan_status status;
@@ -465,12 +780,29 @@ int halow_connect(const char* ssid, const char* password)
     strncpy(halow_connected_ssid, ssid, sizeof(halow_connected_ssid) - 1);
     halow_connected_ssid[sizeof(halow_connected_ssid) - 1] = '\0';
 
+    // Store SSID and password for potential auto-save when connection succeeds
+    strncpy(halow_save_pending_ssid, ssid, sizeof(halow_save_pending_ssid) - 1);
+    halow_save_pending_ssid[sizeof(halow_save_pending_ssid) - 1] = '\0';
+
+    if (password && strlen(password) > 0) {
+        strncpy(halow_save_pending_password, password, sizeof(halow_save_pending_password) - 1);
+        halow_save_pending_password[sizeof(halow_save_pending_password) - 1] = '\0';
+    } else {
+        halow_save_pending_password[0] = '\0';  // Empty for open networks
+    }
+
+    ESP_LOGI(TAG, "Set pending save config - SSID='%s', password='%s'",
+             halow_save_pending_ssid, halow_save_pending_password[0] ? "[SET]" : "[OPEN]");
+
     // Enable STA mode and start connection
     status = mmwlan_sta_enable(&sta_args, halow_sta_status_handler);
     if (status != MMWLAN_SUCCESS) {
         ESP_LOGE(TAG, "Failed to enable STA mode: status %d", status);
         // Clear SSID if connection failed
         halow_connected_ssid[0] = '\0';
+        // Clear pending save config
+        halow_save_pending_ssid[0] = '\0';
+        halow_save_pending_password[0] = '\0';
         return -1;
     }
 

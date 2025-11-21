@@ -553,6 +553,9 @@ void app_main(void)
     // Initialize HaLow system
     task_halow_init();
 
+    // Auto-start HaLow networking (will attempt auto-connect if config exists)
+    halow_start();
+
     // Initialize network tools (ping, traceroute, etc.)
     task_tool_init();
 #endif

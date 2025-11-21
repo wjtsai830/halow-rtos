@@ -77,4 +77,26 @@ bool halow_is_initialized(void);
  */
 bool halow_is_started(void);
 
+/**
+ * @brief Save network configuration to certs partition
+ * @param ssid Network SSID
+ * @param password Network password (can be NULL for open networks)
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t halow_save_network_config(const char* ssid, const char* password);
+
+/**
+ * @brief Load network configuration from certs partition
+ * @param ssid Buffer to store SSID (must be at least 32 bytes)
+ * @param password Buffer to store password (must be at least 64 bytes)
+ * @return true if config was loaded successfully, false otherwise
+ */
+bool halow_load_network_config(char* ssid, char* password);
+
+/**
+ * @brief Clear saved network configuration
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t halow_clear_network_config(void);
+
 #endif // TASK_HALOW_H
