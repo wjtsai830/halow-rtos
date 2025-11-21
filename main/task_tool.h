@@ -19,6 +19,11 @@ extern "C" {
 esp_err_t task_tool_init(void);
 
 /**
+ * @brief Register network tools console commands
+ */
+void register_tool_commands(void);
+
+/**
  * @brief Ping a remote host to test network connectivity
  * @param host IP address or hostname to ping
  * @param count Number of ping packets to send (default: 4)
