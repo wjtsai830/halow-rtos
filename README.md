@@ -20,10 +20,13 @@ HaLow RTOS is an advanced IoT system built on ESP-IDF, designed for HaLow (802.1
 - Secure credential storage in dedicated NVS partition
 - TLS certificate management ready for future enhancements
 
-###  **HaLow WiFi Integration**
-- Long-range 802.11ah connectivity support
-- Optimized configuration management
-- MQTT communication protocol
+###  **HaLow WiFi Integration** ✅ COMPLETED
+- Complete 802.11ah WiFi networking system
+- Long-range connectivity with automatic configuration management
+- Network scanning and secure connection capabilities
+- Automatic credential persistence to flash storage
+- Intelligent reconnection on system reboot
+- MQTT communication protocol ready
 
 ###  **Interactive Console**
 - Rich command-line interface with color support
@@ -98,6 +101,14 @@ Once logged in, use these console commands:
 - `free` - Show memory usage statistics
 - `uptime` - Display system uptime
 - `restart` - Restart the system
+
+### **HaLow WiFi Commands** ✅ NEW
+- `halow on` - Start HaLow networking service and attempt auto-connect
+- `halow off` - Stop HaLow networking and disconnect
+- `halow scan` - Scan for available HaLow networks
+- `halow connect <ssid> [password]` - Connect to network with auto-save
+- `halow status` - Display connection status, IP, and network info
+- `halow version` - Show HaLow firmware and hardware version
 
 #### OTA Commands
 - `ota_info` - Show OTA partition information
